@@ -1,7 +1,6 @@
 from sqlmodel import Session, select
-from ..database import engine
-from ..models import Submission, ProblemResponse, Problem, AsyncJob
-from . import ai_service, job_service
+from ..models import Submission, ProblemResponse, Problem
+from . import ai_service
 
 
 def create_submission(session: Session, activity_id: int) -> Submission:
@@ -16,10 +15,9 @@ def get_submission(session: Session, submission_id: int) -> Submission | None:
     return session.get(Submission, submission_id)
 
 
-def submit_response(
+async def submit_and_grade_response(
     session: Session, submission_id: int, problem_id: int, code: str
-) -> tuple[ProblemResponse, AsyncJob]:
-    # upsert problem_response
+) -> ProblemResponse:
     existing = session.exec(
         select(ProblemResponse).where(
             ProblemResponse.submission_id == submission_id,
@@ -38,16 +36,16 @@ def submit_response(
     session.commit()
     session.refresh(pr)
 
-    job = job_service.create_job(
-        session,
-        job_service.JOB_GRADE_RESPONSE,
-        {"problem_response_id": pr.id},
-    )
-    pr.grading_job_id = job.id
+    problem = session.get(Problem, problem_id)
+    if not problem:
+        raise RuntimeError("problem missing")
+
+    feedback = await ai_service.grade_submission(problem.problem_text, code)
+    pr.ai_feedback = feedback
     session.add(pr)
     session.commit()
     session.refresh(pr)
-    return pr, job
+    return pr
 
 
 def get_response(
@@ -61,77 +59,32 @@ def get_response(
     ).first()
 
 
-async def grade_response_work(problem_response_id: int, job_id: int) -> None:
-    async def work():
-        with Session(engine) as s:
-            pr = s.get(ProblemResponse, problem_response_id)
-            if not pr:
-                raise RuntimeError("response missing")
-            problem = s.get(Problem, pr.problem_id)
-            if not problem:
-                raise RuntimeError("problem missing")
-            problem_text = problem.problem_text
-            code = pr.submitted_code
-
-        feedback = await ai_service.grade_submission(problem_text, code)
-
-        with Session(engine) as s:
-            pr = s.get(ProblemResponse, problem_response_id)
-            pr.ai_feedback = feedback
-            s.add(pr)
-            job = s.get(AsyncJob, job_id)
-            if job:
-                job.result = feedback
-                s.add(job)
-            s.commit()
-
-    await job_service.run_job(job_id, work)
-
-
-def start_report(session: Session, submission_id: int) -> AsyncJob:
-    job = job_service.create_job(
-        session, job_service.JOB_GENERATE_REPORT, {"submission_id": submission_id}
-    )
+async def generate_and_save_report(session: Session, submission_id: int) -> Submission:
     sub = session.get(Submission, submission_id)
-    if sub:
-        sub.report_job_id = job.id
-        session.add(sub)
-        session.commit()
-    return job
+    if not sub:
+        raise RuntimeError("submission missing")
 
+    responses = list(
+        session.exec(
+            select(ProblemResponse)
+            .where(ProblemResponse.submission_id == submission_id)
+            .order_by(ProblemResponse.id)
+        )
+    )
+    items = []
+    for pr in responses:
+        problem = session.get(Problem, pr.problem_id)
+        items.append(
+            {
+                "problem": problem.problem_text if problem else "",
+                "code": pr.submitted_code,
+                "feedback": pr.ai_feedback,
+            }
+        )
 
-async def generate_report_work(submission_id: int, job_id: int) -> None:
-    async def work():
-        with Session(engine) as s:
-            responses = list(
-                s.exec(
-                    select(ProblemResponse)
-                    .where(ProblemResponse.submission_id == submission_id)
-                    .order_by(ProblemResponse.id)
-                )
-            )
-            items = []
-            for pr in responses:
-                problem = s.get(Problem, pr.problem_id)
-                items.append(
-                    {
-                        "problem": problem.problem_text if problem else "",
-                        "code": pr.submitted_code,
-                        "feedback": pr.ai_feedback,
-                    }
-                )
-
-        report = await ai_service.generate_report(items)
-
-        with Session(engine) as s:
-            sub = s.get(Submission, submission_id)
-            if sub:
-                sub.feedback_report = report
-                s.add(sub)
-            job = s.get(AsyncJob, job_id)
-            if job:
-                job.result = report
-                s.add(job)
-            s.commit()
-
-    await job_service.run_job(job_id, work)
+    report = await ai_service.generate_report(items)
+    sub.feedback_report = report
+    session.add(sub)
+    session.commit()
+    session.refresh(sub)
+    return sub

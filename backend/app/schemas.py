@@ -14,8 +14,7 @@ class CreateActivityRequest(CamelModel):
 
 class CreateActivityResponse(CamelModel):
     activity_id: int
-    job_id: int
-    status: str
+    problems: List["ProblemModel"]
 
 
 class ProblemModel(CamelModel):
@@ -27,15 +26,6 @@ class ProblemModel(CamelModel):
 class GetActivityProblemsResponse(CamelModel):
     activity_id: int
     problems: List[ProblemModel]
-
-
-# ---- Jobs ----
-class GetJobResponse(CamelModel):
-    id: int
-    job_type: str
-    status: str
-    result: Optional[str] = None
-    error_message: Optional[str] = None
 
 
 # ---- Submissions ----
@@ -51,8 +41,7 @@ class SubmitProblemResponseRequest(CamelModel):
 
 class SubmitProblemResponseResponse(CamelModel):
     problem_response_id: int
-    job_id: int
-    status: str
+    ai_feedback: str
 
 
 class GetProblemResponseResponse(CamelModel):
@@ -61,13 +50,11 @@ class GetProblemResponseResponse(CamelModel):
     problem_id: int
     submitted_code: str
     ai_feedback: Optional[str] = None
-    grading_job_id: Optional[int] = None
 
 
 class GenerateReportResponse(CamelModel):
     submission_id: int
-    job_id: int
-    status: str
+    feedback_report: str
 
 
 class GetReportResponse(CamelModel):
@@ -75,12 +62,3 @@ class GetReportResponse(CamelModel):
     feedback_report: Optional[str] = None
 
 
-# ---- Run code ----
-class RunCodeRequest(CamelModel):
-    code: str
-
-
-class RunCodeResponse(CamelModel):
-    stdout: str
-    stderr: str
-    exit_code: int

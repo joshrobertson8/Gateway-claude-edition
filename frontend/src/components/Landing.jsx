@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, pollJob } from '../api.js'
+import { api } from '../api.js'
 
 export default function Landing({ onReady }) {
   const [text, setText] = useState('')
@@ -20,12 +20,9 @@ export default function Landing({ onReady }) {
     if (!text.trim()) { setError('Paste or drop some learning material first.'); return }
     setLoading(true)
     try {
-      setStatus('Creating activity…')
-      const { activityId, jobId } = await api.createActivity(text)
       setStatus('Generating challenges…')
-      await pollJob(jobId)
+      const { activityId, problems } = await api.createActivity(text)
       setStatus('Loading workspace…')
-      const { problems } = await api.getProblems(activityId)
       const { submissionId } = await api.createSubmission(activityId)
       onReady({ activityId, submissionId, problems })
     } catch (e) {

@@ -131,6 +131,30 @@ function toJs(proxy) {
   }
 }
 
+export async function runPython(code) {
+  const pyodide = await getPyodide()
+  // Capture stdout / stderr by replacing the file objects, then restore.
+  await pyodide.runPythonAsync(`
+import sys, io
+_stdout, _stderr = sys.stdout, sys.stderr
+sys.stdout = io.StringIO()
+sys.stderr = io.StringIO()
+`)
+  let exitCode = 0
+  try {
+    await pyodide.runPythonAsync(code)
+  } catch (e) {
+    exitCode = 1
+    await pyodide.runPythonAsync(
+      `import sys, traceback\nsys.stderr.write(${JSON.stringify(String(e.message || e))})\n`
+    )
+  }
+  const stdout = await pyodide.runPythonAsync('sys.stdout.getvalue()')
+  const stderr = await pyodide.runPythonAsync('sys.stderr.getvalue()')
+  await pyodide.runPythonAsync('sys.stdout, sys.stderr = _stdout, _stderr')
+  return { stdout, stderr, exitCode }
+}
+
 export async function initPythonLsp(monaco) {
   const pyodide = await getPyodide()
 

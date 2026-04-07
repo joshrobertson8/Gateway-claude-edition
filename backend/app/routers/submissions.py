@@ -8,10 +8,8 @@ from ..schemas import (
     GetProblemResponseResponse,
     GenerateReportResponse,
     GetReportResponse,
-    RunCodeRequest,
-    RunCodeResponse,
 )
-from ..services import submission_service, job_service, runner_service, ai_service
+from ..services import submission_service, ai_service
 
 router = APIRouter(tags=["submissions"])
 
@@ -34,12 +32,11 @@ async def submit_response(
     body: SubmitProblemResponseRequest,
     session: Session = Depends(get_session),
 ):
-    pr, job = submission_service.submit_response(
+    pr = await submission_service.submit_and_grade_response(
         session, submission_id, problem_id, body.submitted_code
     )
-    job_service.schedule(submission_service.grade_response_work(pr.id, job.id))
     return SubmitProblemResponseResponse(
-        problem_response_id=pr.id, job_id=job.id, status=job.status
+        problem_response_id=pr.id, ai_feedback=pr.ai_feedback or ""
     )
 
 
@@ -57,15 +54,15 @@ def get_response(submission_id: int, problem_id: int, session: Session = Depends
         problem_id=pr.problem_id,
         submitted_code=pr.submitted_code,
         ai_feedback=pr.ai_feedback,
-        grading_job_id=pr.grading_job_id,
     )
 
 
 @router.post("/api/submissions/{submission_id}/report", response_model=GenerateReportResponse)
 async def start_report(submission_id: int, session: Session = Depends(get_session)):
-    job = submission_service.start_report(session, submission_id)
-    job_service.schedule(submission_service.generate_report_work(submission_id, job.id))
-    return GenerateReportResponse(submission_id=submission_id, job_id=job.id, status=job.status)
+    sub = await submission_service.generate_and_save_report(session, submission_id)
+    return GenerateReportResponse(
+        submission_id=sub.id, feedback_report=sub.feedback_report or ""
+    )
 
 
 @router.get("/api/submissions/{submission_id}/report", response_model=GetReportResponse)
@@ -74,13 +71,6 @@ def get_report(submission_id: int, session: Session = Depends(get_session)):
     if not sub:
         raise HTTPException(404, "submission not found")
     return GetReportResponse(submission_id=sub.id, feedback_report=sub.feedback_report)
-
-
-# ---- Helpers ----
-@router.post("/api/run", response_model=RunCodeResponse)
-async def run_code(body: RunCodeRequest):
-    out, err, code = await runner_service.run_python(body.code)
-    return RunCodeResponse(stdout=out, stderr=err, exit_code=code)
 
 
 @router.post("/api/hint")

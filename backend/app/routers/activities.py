@@ -7,7 +7,7 @@ from ..schemas import (
     GetActivityProblemsResponse,
     ProblemModel,
 )
-from ..services import activity_service, job_service
+from ..services import activity_service
 
 router = APIRouter(prefix="/api/activities", tags=["activities"])
 
@@ -18,9 +18,18 @@ async def create_activity(
 ):
     if not body.content.strip():
         raise HTTPException(400, "content required")
-    activity, job = activity_service.create_activity(session, body.content)
-    job_service.schedule(activity_service.generate_problems_work(activity.id, job.id))
-    return CreateActivityResponse(activity_id=activity.id, job_id=job.id, status=job.status)
+    activity, problems = await activity_service.create_activity_with_problems(
+        session, body.content
+    )
+    return CreateActivityResponse(
+        activity_id=activity.id,
+        problems=[
+            ProblemModel(
+                id=p.id, sequence_number=p.sequence_number, problem_text=p.problem_text
+            )
+            for p in problems
+        ],
+    )
 
 
 @router.get("/{activity_id}/problems", response_model=GetActivityProblemsResponse)

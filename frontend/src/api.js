@@ -1,4 +1,4 @@
-const BASE = ''
+const BASE = import.meta.env.VITE_API_BASE ?? '/_/backend'
 
 async function request(path, opts = {}) {
   const r = await fetch(BASE + path, {
@@ -10,12 +10,13 @@ async function request(path, opts = {}) {
 }
 
 export const api = {
+  // Returns { activityId, problems: [{id, sequenceNumber, problemText}] }
   createActivity: (content) =>
     request('/api/activities', { method: 'POST', body: JSON.stringify({ content }) }),
-  getJob: (id) => request(`/api/jobs/${id}`),
   getProblems: (activityId) => request(`/api/activities/${activityId}/problems`),
   createSubmission: (activityId) =>
     request(`/api/activities/${activityId}/submissions`, { method: 'POST' }),
+  // Returns { problemResponseId, aiFeedback }
   submitResponse: (submissionId, problemId, code) =>
     request(`/api/submissions/${submissionId}/problems/${problemId}/responses`, {
       method: 'POST',
@@ -23,25 +24,13 @@ export const api = {
     }),
   getResponse: (submissionId, problemId) =>
     request(`/api/submissions/${submissionId}/problems/${problemId}/responses`),
-  startReport: (submissionId) =>
+  // Returns { submissionId, feedbackReport }
+  generateReport: (submissionId) =>
     request(`/api/submissions/${submissionId}/report`, { method: 'POST' }),
   getReport: (submissionId) => request(`/api/submissions/${submissionId}/report`),
-  runCode: (code) =>
-    request('/api/run', { method: 'POST', body: JSON.stringify({ code }) }),
   hint: (problemText, code) =>
     request('/api/hint', {
       method: 'POST',
       body: JSON.stringify({ problemText, code }),
     }),
-}
-
-export async function pollJob(jobId, { intervalMs = 2000, timeoutMs = 1800000 } = {}) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const job = await api.getJob(jobId)
-    if (job.status === 'completed') return job
-    if (job.status === 'failed') throw new Error(job.errorMessage || 'job failed')
-    await new Promise((r) => setTimeout(r, intervalMs))
-  }
-  throw new Error('job timed out')
 }

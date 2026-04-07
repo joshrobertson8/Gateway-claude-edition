@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
-from .routers import activities, jobs, submissions
+from .routers import activities, submissions
 
-app = FastAPI(title="Gateway API", version="0.1.0")
+app = FastAPI(title="Gateway API", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,5 +25,4 @@ def health():
 
 
 app.include_router(activities.router)
-app.include_router(jobs.router)
 app.include_router(submissions.router)

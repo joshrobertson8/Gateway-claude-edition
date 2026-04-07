@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import ReactMarkdown from 'react-markdown'
-import { api, pollJob } from '../api.js'
-import { initPythonLsp } from '../pythonLsp.js'
+import { api } from '../api.js'
+import { initPythonLsp, runPython } from '../pythonLsp.js'
 
 export default function Workspace({ session, onFinish }) {
   const { submissionId, problems } = session
@@ -60,7 +60,7 @@ export default function Workspace({ session, onFinish }) {
   async function run() {
     setRunning(true); setError('')
     try {
-      const res = await api.runCode(code)
+      const res = await runPython(code)
       if (alive.current) setOutput(res)
     } catch (e) { if (alive.current) setError(e.message) }
     if (alive.current) setRunning(false)
@@ -69,10 +69,7 @@ export default function Workspace({ session, onFinish }) {
   async function submit() {
     setSubmitting(true); setError(''); setFeedback('')
     try {
-      const { jobId } = await api.submitResponse(submissionId, current.id, code)
-      await pollJob(jobId)
-      if (!alive.current) return
-      const r = await api.getResponse(submissionId, current.id)
+      const r = await api.submitResponse(submissionId, current.id, code)
       if (!alive.current) return
       setFeedback(r.aiFeedback || '(no feedback)')
     } catch (e) { if (alive.current) setError(e.message) }
@@ -91,8 +88,7 @@ export default function Workspace({ session, onFinish }) {
   async function next() {
     if (isLast) {
       try {
-        const { jobId } = await api.startReport(submissionId)
-        await pollJob(jobId)
+        await api.generateReport(submissionId)
         if (!alive.current) return
         onFinish(submissionId)
       } catch (e) { if (alive.current) setError(e.message) }
