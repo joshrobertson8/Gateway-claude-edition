@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import ReactMarkdown from 'react-markdown'
 import { api, pollJob } from '../api.js'
+import { initPythonLsp } from '../pythonLsp.js'
 
 export default function Workspace({ session, onFinish }) {
   const { submissionId, problems } = session
@@ -18,10 +19,35 @@ export default function Workspace({ session, onFinish }) {
   const [hinting, setHinting] = useState(false)
   const [error, setError] = useState('')
   const alive = useRef(true)
+  const editorRef = useRef(null)
+  const monacoRef = useRef(null)
+  const lspRef = useRef(null)
+  const lintTimer = useRef(null)
   useEffect(() => {
     alive.current = true
     return () => { alive.current = false }
   }, [])
+
+  function handleEditorMount(editor, monaco) {
+    editorRef.current = editor
+    monacoRef.current = monaco
+    initPythonLsp(monaco).then((lsp) => {
+      if (!alive.current) return
+      lspRef.current = lsp
+      const model = editor.getModel()
+      if (model) lsp.lint(model)
+    }).catch(() => {})
+  }
+
+  useEffect(() => {
+    if (!lspRef.current || !editorRef.current) return
+    clearTimeout(lintTimer.current)
+    lintTimer.current = setTimeout(() => {
+      const model = editorRef.current?.getModel()
+      if (model) lspRef.current.lint(model)
+    }, 350)
+    return () => clearTimeout(lintTimer.current)
+  }, [code])
 
   useEffect(() => {
     setCode(current.problemText)
@@ -104,6 +130,7 @@ export default function Workspace({ session, onFinish }) {
             theme="vs-dark"
             value={code}
             onChange={(v) => setCode(v ?? '')}
+            onMount={handleEditorMount}
             options={{
               fontSize: 13.5,
               fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
@@ -113,6 +140,11 @@ export default function Workspace({ session, onFinish }) {
               renderLineHighlight: 'gutter',
               smoothScrolling: true,
               cursorBlinking: 'smooth',
+              quickSuggestions: { other: true, comments: false, strings: false },
+              suggestOnTriggerCharacters: true,
+              parameterHints: { enabled: true },
+              hover: { enabled: true, delay: 200 },
+              tabCompletion: 'on',
             }}
           />
         </div>
